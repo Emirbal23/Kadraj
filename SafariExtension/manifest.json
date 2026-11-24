@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Kadraj Safari",
+  "version": "0.8.5",
+  "icons": { "128": "icon.png" },
+  "description": "Desteklenen videoyu Kadraj’ın saydam oynatma penceresinde açar.",
+  "permissions": ["storage"],
+  "optional_host_permissions": ["http://127.0.0.1/*"],
+  "action": { "default_title": "Kadraj Safari", "default_popup": "pair.html" },
+  "background": { "service_worker": "badge.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["connect.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": ["video.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

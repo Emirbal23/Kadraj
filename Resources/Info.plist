@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>app.kadraj.macos</string>
+  <key>CFBundleName</key><string>Kadraj</string>
+  <key>CFBundleDisplayName</key><string>Kadraj</string>
+  <key>CFBundleIconFile</key><string>Kadraj.icns</string>
+  <key>CFBundleExecutable</key><string>Kadraj</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.8.5</string>
+  <key>CFBundleVersion</key><string>15</string>
+  <key>CFBundleDevelopmentRegion</key><string>tr</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Kadraj, etkinleştirdiğiniz tarayıcı veya QuickTime’da oynayan videoyu algılamak ve oynatma düğmelerini çalıştırmak için Otomasyon izni ister.</string>
+</dict>
+</plist>
