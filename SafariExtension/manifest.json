@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kadraj Safari",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "icons": { "128": "icon.png" },
   "description": "Desteklenen videoyu Kadraj’ın saydam oynatma penceresinde açar.",
   "permissions": ["storage"],

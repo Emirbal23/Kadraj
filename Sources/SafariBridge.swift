@@ -70,6 +70,7 @@ final class SafariBridge {
         didSet {
             if let oldValue, oldValue != frameVideo { retiredFrameVideo = oldValue }
             frameGeneration = UUID()
+            acknowledgedFrameStart = nil
             frameContactAt = SuspendingClock.now
             if frameVideo == nil { frameSize = nil }
         }
@@ -79,6 +80,7 @@ final class SafariBridge {
     private(set) var frameContactAt = SuspendingClock.now
     private var frameGeneration = UUID()
     private var retiredFrameVideo: UUID?
+    private var acknowledgedFrameStart: UUID?
     private var pairingTicket: (value: String, expires: ContinuousClock.Instant)?
     private var listener: NWListener?
     private var pending: [UUID: Waiter] = [:]
@@ -93,7 +95,7 @@ final class SafariBridge {
 
     private struct Waiter {
         let command: Command
-        var delivered = false
+        var deliveredAt: ContinuousClock.Instant?
         let continuation: CheckedContinuation<Reply?, Never>
     }
 
@@ -236,7 +238,8 @@ final class SafariBridge {
             if request.operation == "frameWait" {
                 // Safari throttles timers when a background video has been paused.
                 let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-                while generation == frameGeneration, pending[video.id]?.delivered != false, ContinuousClock.now < deadline {
+                while generation == frameGeneration, pending[video.id].map({ $0.deliveredAt != nil }) ?? true,
+                      ContinuousClock.now < deadline {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
                 guard generation == frameGeneration else { return retiredFrameResponse(video.id) }
@@ -258,6 +261,13 @@ final class SafariBridge {
         case "poll":
             if video.id == frameVideo { frameContactAt = SuspendingClock.now }
             if request.open == true || request.available == true { didOffer?(video, request.open == true) }
+            if video.youtubeID != nil, frameVideo != video.id, request.available == true {
+                // Keep a request waiting while the user moves from Safari to the Kadraj menu.
+                let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+                while pending[video.id] == nil, ContinuousClock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
             return poll(video.id)
         case "withdraw":
             didWithdraw?(video.id)
@@ -269,13 +279,18 @@ final class SafariBridge {
             didLoseSource?(video.id)
             return response(200, ok: true)
         case "reply":
-            guard let reply = request.reply, let waiter = pending[video.id],
-                  waiter.delivered, waiter.command.id == reply.id else { return response(409, ok: false) }
+            guard let reply = request.reply else { return response(400, ok: false) }
+            if video.id == frameVideo, reply.id == acknowledgedFrameStart {
+                return response(200, ok: true, streaming: true)
+            }
+            guard let waiter = pending[video.id], waiter.deliveredAt != nil,
+                  waiter.command.id == reply.id else { return response(409, ok: false) }
             pending.removeValue(forKey: video.id)
             if waiter.command.kind == .claim, reply.success, reply.claimed == true { owned.insert(video.id) }
             if waiter.command.kind == .returnPlayback { owned.remove(video.id) }
             waiter.continuation.resume(returning: reply)
             if waiter.command.kind == .startFrames {
+                if reply.success, frameVideo == video.id { acknowledgedFrameStart = reply.id }
                 return response(200, ok: true, streaming: frameVideo == video.id)
             }
             return response(200, ok: true)
@@ -286,10 +301,16 @@ final class SafariBridge {
 
     private func poll(_ id: UUID) -> (Int, Data) {
         var command: Command?
-        if var waiter = pending[id], !waiter.delivered {
-            waiter.delivered = true
-            pending[id] = waiter
-            command = waiter.command
+        if var waiter = pending[id] {
+            let now = ContinuousClock.now
+            let shouldDeliver = waiter.deliveredAt.map {
+                waiter.command.kind == .startFrames && $0.duration(to: now) >= .seconds(2)
+            } ?? true
+            if shouldDeliver {
+                waiter.deliveredAt = now
+                pending[id] = waiter
+                command = waiter.command
+            }
         }
         let streaming = frameVideo == id || mirrorVideo == id
         return response(200, ok: true, command: command, owned: owned.contains(id),

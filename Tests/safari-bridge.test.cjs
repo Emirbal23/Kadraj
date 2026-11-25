@@ -93,7 +93,24 @@ vm.runInContext(read("pair.js"), domain);
   assert.deepEqual(posts.at(-1).body, {operation: "pair", ticket});
   assert.equal((await listener(pairRequest, pairTab)).ok, false);
   await vm.runInContext("checkConnection()", domain);
-  assert.equal(output.value, "Kadraj’a bağlandı.");
+  assert.match(output.value, /^Kadraj’a bağlandı\./);
+  assert.equal(button.textContent, "Bağlantı sekmesini yenile");
+  const updatedStatus = {};
+  for (const [hash, pingOK, expected] of [
+    ["", true, "Kadraj’a bağlandı."],
+    ["#" + ticket, true, "Kadraj’a bağlandı."],
+    ["#" + ticket, false, "Kadraj bağlantısı doğrulanamadı."],
+  ]) {
+    await vm.runInNewContext(read("connect.js"), {
+      location: new URL(pairTab.url + hash), history,
+      document: {getElementById: id => id === "pair-status" ? updatedStatus : null},
+      browser: {runtime: {async sendMessage(message) {
+        if (message.type === "kadraj-pair") throw new Error("lost response");
+        return {ok: pingOK};
+      }}},
+    });
+    assert.equal(updatedStatus.textContent, expected);
+  }
 
   await listener({type: "kadraj-video", available: true, request: offer}, browserFrame);
   assert.deepEqual(posts.at(-1), {
@@ -142,6 +159,7 @@ vm.runInContext(read("pair.js"), domain);
   const polls = [];
   let stopped = false;
   let nextFrame;
+  let dropStartReply = true;
   let canvasWidth;
   let stallPost = false;
   let releasePost;
@@ -191,6 +209,10 @@ vm.runInContext(read("pair.js"), domain);
       messages.push(request.operation);
       if (request.operation === "poll") polls.push(request);
       if (request.reply) replies.push(request.reply);
+      if (request.reply?.id === "start" && dropStartReply) {
+        dropStartReply = false;
+        return {ok: false, reason: "network"};
+      }
       if (request.operation === "frame") {
         frames.push(request);
         if (stallPost) return await new Promise(resolve => { releasePost = resolve });
@@ -214,6 +236,7 @@ vm.runInContext(read("pair.js"), domain);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(replies.at(-1).success, true);
   assert.equal(source.paused, false);
+  assert.equal(replies.filter(reply => reply.id === "start").length, 2);
   assert.equal(frames.at(-1).image, "AA==");
   assert.equal(frames.at(-1).media.mirror, null);
   assert.equal(canvasWidth, 640);

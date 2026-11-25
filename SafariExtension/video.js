@@ -388,7 +388,11 @@
       reply.success = false;
     }
     let ack;
-    try { ack = await message(record, "reply", {reply}); } catch {}
+    const acknowledge = () => message(record, "reply", {reply}).catch(() => null);
+    ack = await acknowledge();
+    if (command.kind === "startFrames" && (!ack || ack.reason === "network")) {
+      ack = await acknowledge();
+    }
     if (frames) {
       if (ack?.ok && ack.streaming !== false) {
         updateFrameBounds(frames, ack);
