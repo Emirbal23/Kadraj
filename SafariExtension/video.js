@@ -186,8 +186,8 @@
       }
       if (!track) return {failure: "captureUnavailable"};
       if (sourceFrames) stopFrames(sourceFrames);
-      const state = {record, canvas, painter, track, bounds, lastMediaTime: -Infinity,
-        resolution: 1, quality: 0.78,
+      const state = {record, canvas, painter, track, bounds, lastMediaTime: -Infinity, nextMediaTime: -Infinity,
+        resolution: 1, quality: 0.78, smallFrames: 0,
         events: ["play", "pause", "seeked"]};
       state.update = () => {
         void sendFrame(state, true);
@@ -214,14 +214,15 @@
     const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
     if (!blob || blob.size > 270_000) return null;
     if (typeof Uint8Array.prototype.toBase64 === "function") {
-      return new Uint8Array(await blob.arrayBuffer()).toBase64();
+      return {image: new Uint8Array(await blob.arrayBuffer()).toBase64(), bytes: blob.size};
     }
-    return await new Promise((resolve, reject) => {
+    const image = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result.split(",")[1]);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+    return {image, bytes: blob.size};
   }
 
   async function waitForFrameCommand(state) {
@@ -249,24 +250,42 @@
     const video = record.element;
     if (!sameSource(record)) { stopFrames(state, true); return; }
     const elapsed = mediaTime - state.lastMediaTime;
-    if (!forced && elapsed >= 0 && elapsed < 0.031) return;
+    const scheduled = !forced && elapsed >= 0 && Number.isFinite(state.nextMediaTime);
+    if (scheduled && mediaTime + 0.002 < state.nextMediaTime) return;
     state.encoding = true;
     state.lastMediaTime = mediaTime;
+    // Keep the cadence tied to media time so 50 FPS input does not round down to 25 FPS.
+    const interval = 1 / 30;
+    state.nextMediaTime = scheduled
+      ? Math.max(mediaTime, state.nextMediaTime + interval)
+      : mediaTime + interval;
     try {
       sizeFrameCanvas(canvas, video, state.bounds, state.resolution);
       painter.drawImage(video, 0, 0, canvas.width, canvas.height);
       const media = snapshot(record);
-      let image = await jpeg(canvas, state.quality);
-      if (!image && state.quality > 0.66) {
+      let encoded = await jpeg(canvas, state.quality);
+      if (!encoded && state.quality > 0.66) {
         state.quality = 0.66;
-        image = await jpeg(canvas, state.quality);
+        state.smallFrames = 0;
+        encoded = await jpeg(canvas, state.quality);
       }
       if (sourceFrames !== state) return;
-      if (!image) {
+      if (!encoded) {
+        state.smallFrames = 0;
         state.resolution = Math.max(0.625, state.resolution - 0.125);
         if (!forced) return;
+      } else if (encoded.bytes <= 135_000 && (state.resolution < 1 || state.quality < 0.78)) {
+        // Leave headroom before increasing quality so a detailed scene does not cause oscillation.
+        state.smallFrames += 1;
+        if (state.smallFrames >= 90) {
+          state.smallFrames = 0;
+          if (state.resolution < 1) state.resolution += 0.125;
+          else state.quality = 0.78;
+        }
+      } else {
+        state.smallFrames = 0;
       }
-      state.latest = {image, media};
+      state.latest = {image: encoded?.image, media};
       void postLatestFrame(state);
     } catch {}
     finally {

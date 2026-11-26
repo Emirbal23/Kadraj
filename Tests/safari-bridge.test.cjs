@@ -161,6 +161,8 @@ vm.runInContext(read("pair.js"), domain);
   let nextFrame;
   let dropStartReply = true;
   let canvasWidth;
+  let jpegBytes = 1;
+  const jpegQualities = [];
   let stallPost = false;
   let releasePost;
   let frameResponse = {ok: true, streaming: true, frameSize: [640, 360]};
@@ -181,7 +183,10 @@ vm.runInContext(read("pair.js"), domain);
         stop() { stopped = true },
       }]};
     },
-    toBlob: callback => callback({size: 1, async arrayBuffer() { return new Uint8Array([0]).buffer }}),
+    toBlob(callback, _format, quality) {
+      jpegQualities.push(quality);
+      callback({size: jpegBytes, async arrayBuffer() { return new Uint8Array([0]).buffer }});
+    },
   })};
   const source = {
     classList: {contains: name => name === "html5-main-video"},
@@ -254,6 +259,31 @@ vm.runInContext(read("pair.js"), domain);
   releasePost({ok: true, streaming: true});
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(frames.slice(beforeStall).map(frame => frame.media.time), [25.04, 25.12]);
+
+  jpegBytes = 300_000;
+  nextFrame(0, {mediaTime: 25.16});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(jpegQualities.slice(-2), [0.78, 0.66]);
+  jpegBytes = 100_000;
+  nextFrame(0, {mediaTime: 25.20});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(canvasWidth, 560);
+  for (let i = 1; i <= 180; i++) {
+    nextFrame(0, {mediaTime: 25.20 + i * 0.04});
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(canvasWidth, 640, "restore full panel resolution when frames fit again");
+  assert.equal(jpegQualities.at(-1), 0.78, "restore JPEG quality after sustained headroom");
+
+  const before50FPS = frames.length;
+  for (let i = 1; i <= 50; i++) {
+    const time = 32.40 + i / 50;
+    source.currentTime = time;
+    nextFrame(0, {mediaTime: time});
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  const sent50FPS = frames.length - before50FPS;
+  assert.ok(sent50FPS >= 29 && sent50FPS <= 31, "keep a 30 FPS cadence when source frames arrive at 50 FPS");
 
   source.currentTime = 25;
   page.hidden = true;
