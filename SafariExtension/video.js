@@ -245,7 +245,11 @@
   async function sendFrame(state, forced = false, mediaTime = state.record.element.currentTime) {
     if (sourceFrames !== state || !state.active) return;
     if (!forced && state.retryAt > Date.now()) return;
-    if (state.encoding) { state.refreshNeeded ||= forced; return; }
+    if (state.encoding) {
+      state.pendingMediaTime = mediaTime;
+      state.refreshNeeded ||= forced;
+      return;
+    }
     const {record, canvas, painter} = state;
     const video = record.element;
     if (!sameSource(record)) { stopFrames(state, true); return; }
@@ -254,8 +258,8 @@
     if (scheduled && mediaTime + 0.002 < state.nextMediaTime) return;
     state.encoding = true;
     state.lastMediaTime = mediaTime;
-    // Keep the cadence tied to media time so 50 FPS input does not round down to 25 FPS.
-    const interval = 1 / 30;
+    // Use the source clock to preserve 50/60 FPS motion without building a frame queue.
+    const interval = 1 / 60;
     state.nextMediaTime = scheduled
       ? Math.max(mediaTime, state.nextMediaTime + interval)
       : mediaTime + interval;
@@ -290,9 +294,12 @@
     } catch {}
     finally {
       state.encoding = false;
-      if (state.refreshNeeded) {
+      if (state.pendingMediaTime !== undefined) {
+        const pendingTime = state.pendingMediaTime;
+        const forceRefresh = state.refreshNeeded;
+        state.pendingMediaTime = undefined;
         state.refreshNeeded = false;
-        void sendFrame(state, true);
+        void sendFrame(state, forceRefresh, pendingTime);
       }
     }
   }

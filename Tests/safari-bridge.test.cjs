@@ -162,6 +162,8 @@ vm.runInContext(read("pair.js"), domain);
   let dropStartReply = true;
   let canvasWidth;
   let jpegBytes = 1;
+  let holdEncode = false;
+  let finishEncode;
   const jpegQualities = [];
   let stallPost = false;
   let releasePost;
@@ -185,7 +187,9 @@ vm.runInContext(read("pair.js"), domain);
     },
     toBlob(callback, _format, quality) {
       jpegQualities.push(quality);
-      callback({size: jpegBytes, async arrayBuffer() { return new Uint8Array([0]).buffer }});
+      const complete = () => callback({size: jpegBytes, async arrayBuffer() { return new Uint8Array([0]).buffer }});
+      if (holdEncode) finishEncode = complete;
+      else complete();
     },
   })};
   const source = {
@@ -283,7 +287,29 @@ vm.runInContext(read("pair.js"), domain);
     await new Promise(resolve => setImmediate(resolve));
   }
   const sent50FPS = frames.length - before50FPS;
-  assert.ok(sent50FPS >= 29 && sent50FPS <= 31, "keep a 30 FPS cadence when source frames arrive at 50 FPS");
+  assert.equal(sent50FPS, 50, "preserve the cadence of a 50 FPS source");
+
+  const beforeSlowEncode = frames.length;
+  holdEncode = true;
+  for (const time of [34, 34.04, 34.08]) {
+    source.currentTime = time;
+    nextFrame(0, {mediaTime: time});
+  }
+  holdEncode = false;
+  finishEncode();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(frames.slice(beforeSlowEncode).map(frame => frame.media.time), [34, 34.08],
+    "encode the newest waiting frame as soon as the encoder becomes available");
+
+  const before120FPS = frames.length;
+  for (let i = 1; i <= 240; i++) {
+    const time = 34.08 + i / 120;
+    source.currentTime = time;
+    nextFrame(0, {mediaTime: time});
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  const sent120FPS = frames.length - before120FPS;
+  assert.ok(sent120FPS >= 119 && sent120FPS <= 121, "limit a 120 FPS source to 60 frames per second");
 
   source.currentTime = 25;
   page.hidden = true;

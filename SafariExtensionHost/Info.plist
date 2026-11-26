@@ -7,8 +7,8 @@
   <key>CFBundleDisplayName</key><string>Kadraj Safari</string>
   <key>CFBundleExecutable</key><string>KadrajSafari</string>
   <key>CFBundlePackageType</key><string>XPC!</string>
-  <key>CFBundleShortVersionString</key><string>0.8.7</string>
-  <key>CFBundleVersion</key><string>17</string>
+  <key>CFBundleShortVersionString</key><string>0.8.8</string>
+  <key>CFBundleVersion</key><string>18</string>
   <key>NSExtension</key>
   <dict>
     <key>NSExtensionPointIdentifier</key><string>com.apple.Safari.web-extension</string>
